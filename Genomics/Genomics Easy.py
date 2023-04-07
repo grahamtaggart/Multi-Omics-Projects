@@ -1,6 +1,5 @@
 from Bio import SeqIO
 from colorama import Fore, Style
-import sys
 
 
 # By using this parse_fasta_file func I can use as many different fasta files as I want without refactoring SeqIO.parse everytime
@@ -11,10 +10,10 @@ def parse_fasta_file(file_path):
             yield record
 
 
-for record in parse_fasta_file(
-        "C:\\Users\\graha\\PycharmProjects\\Multi-Omics Projects\\Genomics\\Files\\spermwhalesequence.fasta"):
+for record in parse_fasta_file("C:\\Users\\graha\\PycharmProjects\\Multi-Omics Projects\\Genomics\\Files\\spermwhalesequence.fasta"):
     sequence = record
 
+# Probably some faster algo can do this without major performance issues, but I don't know about it yet.
 
 def colors_to_letters(sequence: str) -> str:
     for base in sequence:
