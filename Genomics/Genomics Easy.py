@@ -27,6 +27,8 @@ def colors_to_letters(sequence: str) -> str:
             print(Fore.LIGHTBLUE_EX + "C" + Style.RESET_ALL, end="")
         elif base == "N":
             print(Fore.LIGHTCYAN_EX + "N" + Style.RESET_ALL, end="")
+        else:
+            print("")
 
 def main():
     colored_seq = colors_to_letters(sequence)
