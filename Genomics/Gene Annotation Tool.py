@@ -1,5 +1,8 @@
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
+import requests
+import time
+from lxml import etree
 
 class FastaParser():
     def __init__(self, file_path):
@@ -11,12 +14,15 @@ class FastaParser():
                 yield record
 
 # The GeneInfo class will take the sequence and then run a couple functions through it, calculating gc content, checking
-# for open reading frames manually, then using a gene ontology API to see what's there
+# for open reading frames manually, then using Uniprot's APIs to check homology, then grabbing annotation data if
+# homology is found.
 
 class GeneInfo():
-    def __init__(self, seq_record: SeqRecord):
+    def __init__(self, seq_record: SeqRecord, testing=False):
         self.seq = seq_record.seq
         self.seq_record = seq_record
+        self.orfs = []
+        self.testing = testing
 
     def gc_content(self) -> float:
         g = c = a = t = n = 0
@@ -61,6 +67,7 @@ class GeneInfo():
                         answer.append((start, end, strand, trans[aa_start:aa_end]))
                     aa_start = aa_end + 1
         answer.sort()
+        self.orfs = answer
         return answer
 
     def print_orfs(self, orf_list):
@@ -71,25 +78,102 @@ class GeneInfo():
             )
 
     def go_analysis(self):
+        pro_seq = [str(orf[3]) for orf in self.orfs]
 
-# Usage example:
-fasta_file = "C:\\Users\\graha\\Downloads\\ecoli.fasta"
-sequence = FastaParser(fasta_file)
+        if self.testing:
+            pro_seq = pro_seq[:10]
 
-for i, record in enumerate(sequence.parse_fasta_file()):
-    if i >= 10:  # Stop after processing the first 10 rows
-        break
+        for sequence in pro_seq:
+            blast_url = "https://www.uniprot.org/blast/uniprot/"
+            blast_data = {
+                "sequence": sequence,
+                "database": "uniprotkb",
+                "stype": "protein",
+                "format": "out",
+                "email": "graham.n.taggart.dut@gmail.com"
+            }
 
-    print(f"Record: {record}")
-    print(f"Description: {record.description}\t")
-    print(f"Sequence length: {len(record.seq)}\t")
+            blast_response = requests.post(blast_url, data=blast_data)
 
-    gene_info = GeneInfo(record)
-    gene_info.gc_content()
+            if blast_response.status_code == 200:
+                try:
+                    # Extract the job ID from the BLAST response
+                    job_id = blast_response.text.strip()
 
-    trans_table = 11
-    min_protein_length = 100
-    orf_list = gene_info.find_orfs_with_trans(trans_table, min_protein_length)
-    gene_info.print_orfs(orf_list)
-    print()
+                    # Check the status of the BLAST job and wait until it's finished
+                    status_url = f"https://www.uniprot.org/blast/{job_id}.status"
+                    while True:
+                        status_response = requests.get(status_url)
+                        if status_response.text.strip() == "RUNNING":
+                            time.sleep(5)
+                        elif status_response.text.strip() == "FINISHED":
+                            break
+                        else:
+                            print(f"Unexpected status: {status_response.text.strip()}")
+                            break
+
+                    # Retrieve the BLAST results
+                    result_url = f"https://www.uniprot.org/blast/{job_id}.out"
+                    result_response = requests.get(result_url)
+
+                    if result_response.status_code == 200:
+                        try:
+                            # Parse BLAST XML output to get UniProt IDs using lxml
+                            root = etree.fromstring(result_response.text)
+                            hits = root.xpath(".//hit")
+                            uniprot_ids = [hit.find("id").text for hit in hits]
+
+                            for uniprot_id in uniprot_ids:
+                                annotation_url = f"https://www.uniprot.org/uniprot/{uniprot_id}.xml"
+                                annotation_response = requests.get(annotation_url)
+
+                                if annotation_response.status_code == 200:
+                                    print(f"Annotations retrieved for UniProt ID: {uniprot_id}, Sequence: {sequence}")
+                                else:
+                                    print(
+                                        f"Failed to retrieve annotations for UniProt ID: {uniprot_id}, Sequence: {sequence}")
+                        except etree.XMLSyntaxError:
+                            print(f"Failed to parse XML results for Sequence: {sequence}")
+                            print(f"XML content: {result_response.text}")
+                    else:
+                        print(f"Failed to retrieve BLAST results for Sequence: {sequence}")
+                        print(f"Status code: {result_response.status_code}")
+                        print(f"Response content: {result_response.text}")
+                except ValueError:
+                    print(f"Failed to extract job ID for Sequence: {sequence}")
+                    print(f"Response content: {blast_response.text}")
+            else:
+                print(f"BLAST job failed for Sequence: {sequence}")
+                print(f"Status code: {blast_response.status_code}")
+                print(f"Response content: {blast_response.text}")
+
+            # Time delay because I'm afraid of being banned by Uniprot
+            time.sleep(5)
+
+# Main use:
+
+def main():
+    fasta_file = "C:\\Users\\graha\\Downloads\\ecoli.fasta"
+    sequence = FastaParser(fasta_file)
+
+    for i, record in enumerate(sequence.parse_fasta_file()):
+        if i >= 10:
+            break
+
+        print(f"Record: {record}")
+        print(f"Description: {record.description}\t")
+        print(f"Sequence length: {len(record.seq)}\t")
+
+        gene_info = GeneInfo(record, testing=True)
+        gene_info.gc_content()
+
+        trans_table = 11
+        min_protein_length = 100
+        orf_list = gene_info.find_orfs_with_trans(trans_table, min_protein_length)
+        gene_info.print_orfs(orf_list)
+        gene_info.go_analysis()
+        print()
+
+if __name__ == '__main__':
+    main()
 
