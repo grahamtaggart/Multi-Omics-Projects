@@ -10,7 +10,7 @@ def parse_fasta_file(file_path):
             yield record
 
 
-for record in parse_fasta_file("C:\\Users\\graha\\PycharmProjects\\Multi-Omics Projects\\Genomics\\Files\\spermwhalesequence.fasta"):
+for record in parse_fasta_file("C:\\Users\\graha\\Downloads\\ecoli.fasta"):
     sequence = record
 
 # Probably some faster algo can do this without major performance issues, but I don't know about it yet.
