@@ -1,8 +1,8 @@
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
-import requests
+from Bio.Blast import NCBIWWW, NCBIXML
 import time
-from lxml import etree
+import requests
 
 class FastaParser():
     def __init__(self, file_path):
@@ -77,6 +77,50 @@ class GeneInfo():
                 % (pro[:30], pro[-3:], len(pro), strand, start, end)
             )
 
+    def submit_blast_job(self, sequence):
+        print("Submitting BLAST job for sequence:", sequence)
+        try:
+            # Using a shorter database "pdb" for testing
+            result_handle = NCBIWWW.qblast("blastp", "pdb", sequence)
+            print("BLAST job submitted.")
+            print("Result handle type:", type(result_handle))
+            print("Result handle content:", result_handle.read()[:100])  # Print the first 100 characters of the result
+            result_handle.seek(0)  # Reset the result handle's position
+        except Exception as e:
+            print("Error occurred while submitting BLAST job:")
+            print(str(e))
+            return None
+        return result_handle
+
+    def parse_blast_results(self, result_handle):
+        print("Parsing BLAST results.")
+        try:
+            blast_record = NCBIXML.read(result_handle)
+            print("BLAST results parsed.")
+        except Exception as e:
+            print("Error occurred while parsing BLAST results:")
+            print(str(e))
+            return None
+        return blast_record
+
+    def get_uniprot_ids_from_blast_record(self, blast_record):
+        print("Extracting UniProt IDs from BLAST record.")
+        try:
+            uniprot_ids = [hit.accession.split("|")[1] for hit in blast_record.alignments]
+            print(f"UniProt IDs extracted: {uniprot_ids}")
+        except Exception as e:
+            print("Error occurred while extracting UniProt IDs from BLAST record:")
+            print(str(e))
+            return []
+        return uniprot_ids
+
+    def get_uniprot_annotation(self, uniprot_id):
+        print(f"Retrieving UniProt annotation for ID: {uniprot_id}")
+        annotation_url = f"https://www.uniprot.org/uniprot/{uniprot_id}.xml"
+        annotation_response = requests.get(annotation_url)
+        print(f"UniProt annotation retrieved. Status code: {annotation_response.status_code}")
+        return annotation_response
+
     def go_analysis(self):
         pro_seq = [str(orf[3]) for orf in self.orfs]
 
@@ -84,72 +128,34 @@ class GeneInfo():
             pro_seq = pro_seq[:10]
 
         for sequence in pro_seq:
-            blast_url = "https://www.uniprot.org/blast/uniprot/"
-            blast_data = {
-                "sequence": sequence,
-                "database": "uniprotkb",
-                "stype": "protein",
-                "format": "out",
-                "email": "graham.n.taggart.dut@gmail.com"
-            }
+            try:
+                result_handle = self.submit_blast_job(sequence)
+                if result_handle is None:
+                    print(f"Failed to submit BLAST job for sequence: {sequence}")
+                    continue
 
-            blast_response = requests.post(blast_url, data=blast_data)
+                blast_record = self.parse_blast_results(result_handle)
+                if blast_record is None:
+                    print(f"Failed to parse BLAST results for sequence: {sequence}")
+                    continue
 
-            if blast_response.status_code == 200:
-                try:
-                    # Extract the job ID from the BLAST response
-                    job_id = blast_response.text.strip()
+                uniprot_ids = self.get_uniprot_ids_from_blast_record(blast_record)
 
-                    # Check the status of the BLAST job and wait until it's finished
-                    status_url = f"https://www.uniprot.org/blast/{job_id}.status"
-                    while True:
-                        status_response = requests.get(status_url)
-                        if status_response.text.strip() == "RUNNING":
-                            time.sleep(5)
-                        elif status_response.text.strip() == "FINISHED":
-                            break
-                        else:
-                            print(f"Unexpected status: {status_response.text.strip()}")
-                            break
+                for uniprot_id in uniprot_ids:
+                    annotation_response = self.get_uniprot_annotation(uniprot_id)
 
-                    # Retrieve the BLAST results
-                    result_url = f"https://www.uniprot.org/blast/{job_id}.out"
-                    result_response = requests.get(result_url)
-
-                    if result_response.status_code == 200:
-                        try:
-                            # Parse BLAST XML output to get UniProt IDs using lxml
-                            root = etree.fromstring(result_response.text)
-                            hits = root.xpath(".//hit")
-                            uniprot_ids = [hit.find("id").text for hit in hits]
-
-                            for uniprot_id in uniprot_ids:
-                                annotation_url = f"https://www.uniprot.org/uniprot/{uniprot_id}.xml"
-                                annotation_response = requests.get(annotation_url)
-
-                                if annotation_response.status_code == 200:
-                                    print(f"Annotations retrieved for UniProt ID: {uniprot_id}, Sequence: {sequence}")
-                                else:
-                                    print(
-                                        f"Failed to retrieve annotations for UniProt ID: {uniprot_id}, Sequence: {sequence}")
-                        except etree.XMLSyntaxError:
-                            print(f"Failed to parse XML results for Sequence: {sequence}")
-                            print(f"XML content: {result_response.text}")
+                    if annotation_response.status_code == 200:
+                        print(f"Annotations retrieved for UniProt ID: {uniprot_id}, Sequence: {sequence}")
                     else:
-                        print(f"Failed to retrieve BLAST results for Sequence: {sequence}")
-                        print(f"Status code: {result_response.status_code}")
-                        print(f"Response content: {result_response.text}")
-                except ValueError:
-                    print(f"Failed to extract job ID for Sequence: {sequence}")
-                    print(f"Response content: {blast_response.text}")
-            else:
-                print(f"BLAST job failed for Sequence: {sequence}")
-                print(f"Status code: {blast_response.status_code}")
-                print(f"Response content: {blast_response.text}")
+                        print(
+                            f"Failed to retrieve annotations for UniProt ID: {uniprot_id}, Sequence: {sequence}")
 
-            # Time delay because I'm afraid of being banned by Uniprot
+            except Exception as e:
+                print(f"An error occurred while processing the sequence: {sequence}")
+                print(str(e))
+
+            # Time delay to avoid overloading the server
             time.sleep(5)
-
 # Main use:
 
 def main():
