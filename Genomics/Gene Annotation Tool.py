@@ -82,20 +82,22 @@ class GeneInfo():
         try:
             # Using a shorter database "pdb" for testing
             result_handle = NCBIWWW.qblast("blastp", "pdb", sequence)
-            print("BLAST job submitted.")
-            print("Result handle type:", type(result_handle))
-            print("Result handle content:", result_handle.read()[:100])  # Print the first 100 characters of the result
-            result_handle.seek(0)  # Reset the result handle's position
         except Exception as e:
             print("Error occurred while submitting BLAST job:")
             print(str(e))
             return None
+
+        print("BLAST job submitted.")
+        print("Result handle type:", type(result_handle))
+        print("Result handle content:", result_handle.read()[:100])  # Print the first 100 characters of the result
+        result_handle.seek(0)  # Reset the result handle's position
         return result_handle
 
     def parse_blast_results(self, result_handle):
         print("Parsing BLAST results.")
         try:
-            blast_record = NCBIXML.read(result_handle)
+            blast_records = NCBIXML.parse(result_handle)
+            blast_record = next(blast_records)
             print("BLAST results parsed.")
         except Exception as e:
             print("Error occurred while parsing BLAST results:")
@@ -119,6 +121,9 @@ class GeneInfo():
         annotation_url = f"https://www.uniprot.org/uniprot/{uniprot_id}.xml"
         annotation_response = requests.get(annotation_url)
         print(f"UniProt annotation retrieved. Status code: {annotation_response.status_code}")
+        if annotation_response.status_code == 200:
+            print("UniProt annotation content (first 500 characters):")
+            print(annotation_response.text[:500])
         return annotation_response
 
     def go_analysis(self):
@@ -170,7 +175,7 @@ def main():
         print(f"Description: {record.description}\t")
         print(f"Sequence length: {len(record.seq)}\t")
 
-        gene_info = GeneInfo(record, testing=True)
+        gene_info = GeneInfo(record, testing=False)
         gene_info.gc_content()
 
         trans_table = 11
