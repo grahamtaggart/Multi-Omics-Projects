@@ -8,5 +8,18 @@
 #informative use biopython to check differences, or try to visualize the results afterwards. Plan is
 #1. write sequence function
 #2. All the NCBI API functions (maybe a class to simplify)
-#3. Biopython visualizer? Either that or some other data visualizer so I can better understand differences in genomes.
+#3. Biopython visualizer? Either that or some other data visualizer so I can better understand differences in genomes.#
+
+from Bio import SeqIO
+from Bio import Entrez
+from Bio import AlignIO
+import requests
+import json
+
+fasta_seq = r"C:\Users\graha\PycharmProjects\Multi-Omics Projects\Genomics\Files\ecoli.fasta"
+file = SeqIO.parse(fasta_seq, "fasta")
+Entrez.email = "email"
+handle = Entrez.esearch(db="pubmed", term="multi-omics[title]")
+record = Entrez.read(handle)
+print(record["IdList"])
 
