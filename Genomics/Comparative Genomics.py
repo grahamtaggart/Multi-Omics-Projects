@@ -16,10 +16,13 @@ from Bio import AlignIO
 import requests
 import json
 
-fasta_seq = r"C:\Users\graha\PycharmProjects\Multi-Omics Projects\Genomics\Files\ecoli.fasta"
-file = SeqIO.parse(fasta_seq, "fasta")
-Entrez.email = "email"
-handle = Entrez.esearch(db="pubmed", term="multi-omics[title]")
-record = Entrez.read(handle)
-print(record["IdList"])
+# Data Retrieval Step
 
+def entrez_call():
+    Entrez.email = "graham.n.taggart.dut@gmail.com"
+    handle = Entrez.einfo()
+    result = handle.read()
+    print(result.keys())
+
+
+# Data Pre-processing Step
